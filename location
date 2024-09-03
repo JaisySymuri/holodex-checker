@@ -10,6 +10,7 @@ div>
 div.container py-0 container--fluid>
 div.row video-row>
 div.row video-row>div.video-col video-4 flex-column col>
+//////////////////////
 a.video-card no-decoration d-flex video-card-fluid flex-column>
 div.video-thumbnail white--text rounded flex-shrink-0 d-flex>
 div.video-card-overlay d-flex justify-space-between flex-column
@@ -17,3 +18,11 @@ div.d-flex justify-space-between align-start>
 div.video-topic rounded-tl-sm
 
 minecraft
+
+//////////////
+a.video-card no-decoration d-flex video-card-fluid flex-column>
+a.d-flex flex-row flex-grow-1 no-decoration video-card-text
+div.d-flex video-card-lines flex-column
+div.channel-name video-card-subtitle
+
+Koseki Bijou Ch. hololive-EN
