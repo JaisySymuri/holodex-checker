@@ -13,27 +13,23 @@ func main() {
 	ctx, cancel := chromedp.NewContext(context.Background())
 	defer cancel()
 
-	// Define a slice to hold the elements' HTML
-	var elementsHTML []string
-
-	// Extract elements with the specified class and their HTML
+	// Run the browser actions
+	var elements []string
 	err := chromedp.Run(ctx,
 		chromedp.Navigate("https://holodex.net/"),
 		chromedp.WaitVisible("body", chromedp.ByQuery),
-		chromedp.Evaluate(`Array.from(document.querySelectorAll('.video-topic.rounded-tl-sm'))
-			.map(e => ({ html: e.outerHTML, text: e.innerText }))
-			.filter(item => item.text === 'Minecraft')`, &elementsHTML),
+		chromedp.Evaluate(`Array.from(document.querySelectorAll('.video-topic.rounded-tl-sm')).map(e => e.innerText)`, &elements),
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if len(elementsHTML) > 0 {
-		fmt.Println("Found the following elements with text 'Minecraft':")
-		for _, elementHTML := range elementsHTML {
-			fmt.Println(elementHTML)
+	if len(elements) > 0 {
+		fmt.Println("Found the following elements with class 'video-topic rounded-tl-sm':")
+		for _, text := range elements {
+			fmt.Println(text)
 		}
 	} else {
-		fmt.Println("No elements with text 'Minecraft' found in the page content")
+		fmt.Println("No elements with class 'video-topic rounded-tl-sm' found in the page content")
 	}
 }
