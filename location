@@ -1,0 +1,19 @@
+https://holodex.net/
+div.v-application v-application--is-ltr theme--dark>
+div.v-application--wrap>
+div>
+div.v-main>
+div.v-main__wrap>
+div.container d-flex flex-column container--fluid>
+div>
+div>
+div.container py-0 container--fluid>
+div.row video-row>
+div.row video-row>div.video-col video-4 flex-column col>
+a.video-card no-decoration d-flex video-card-fluid flex-column>
+div.video-thumbnail white--text rounded flex-shrink-0 d-flex>
+div.video-card-overlay d-flex justify-space-between flex-column
+div.d-flex justify-space-between align-start>
+div.video-topic rounded-tl-sm
+
+minecraft
