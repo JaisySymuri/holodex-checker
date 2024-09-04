@@ -1,0 +1,38 @@
+{
+    "ok": true,
+    "result": [
+      {
+        "update_id": 948508804,
+        "message": {
+          "message_id": 3,
+          "from": {
+            "id": 6250216578,
+            "is_bot": false,
+            "first_name": "Jaisy",
+            "last_name": "Algifari",
+            "language_code": "en"
+          },
+          "chat": {
+            "id": 6250216578,
+            "first_name": "Jaisy",
+            "last_name": "Algifari",
+            "type": "private"
+          },
+          "date": 1725353550,
+          "text": "/start @HoloNotifierBot",
+          "entities": [
+            {
+              "offset": 0,
+              "length": 6,
+              "type": "bot_command"
+            },
+            {
+              "offset": 7,
+              "length": 16,
+              "type": "mention"
+            }
+          ]
+        }
+      }
+    ]
+  }
