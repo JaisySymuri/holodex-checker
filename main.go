@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/gofrs/flock"
 )
 
 // Function to send a message to Telegram
@@ -117,6 +118,17 @@ func sendMessageToWhatsApp(phoneNumber string, apiKey string, message string) er
 }
 
 func main() {
+    lock := flock.NewFlock("app.lock")
+    locked, err := lock.TryLock()
+    if err != nil {
+        log.Fatalf("Failed to acquire lock: %v", err)
+    }
+    if !locked {
+        log.Println("Another instance is already running. Exiting.")
+        return
+    }
+    defer lock.Unlock()
+
 	// Hide the console window
 	syscall.NewLazyDLL("kernel32.dll").NewProc("FreeConsole").Call()
 
