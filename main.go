@@ -39,10 +39,11 @@ func checkHolodex(botToken string, chatID int64, phoneNumber string, apiKey stri
 	ctx, cancel := chromedp.NewContext(context.Background())
 	defer cancel()
 
-	// Define a struct to hold the video topic and channel name
 	type VideoInfo struct {
-		Topic   string
-		Channel string
+		Topic         string
+		Channel       string
+		LiveStatus    string
+		UpcomingStatus string
 	}
 
 	// Run the browser actions
@@ -54,7 +55,12 @@ func checkHolodex(botToken string, chatID int64, phoneNumber string, apiKey stri
 			Array.from(document.querySelectorAll('a.video-card.no-decoration.d-flex.video-card-fluid.flex-column')).map(card => {
 				const topic = card.querySelector('div.video-topic.rounded-tl-sm')?.innerText.trim() || '';
 				const channel = card.querySelector('div.channel-name.video-card-subtitle')?.innerText.trim() || '';
-				return { topic, channel };
+
+				// Check for both 'text-live' and 'text-upcoming' spans
+				const liveStatus = card.querySelector('div.video-card-subtitle span.text-live')?.innerText.trim() || '';
+				const upcomingStatus = card.querySelector('div.video-card-subtitle span.text-upcoming')?.innerText.trim() || '';
+
+				return { topic, channel, liveStatus, upcomingStatus };
 			});
 		`, &videoInfos),
 	)
@@ -66,7 +72,7 @@ func checkHolodex(botToken string, chatID int64, phoneNumber string, apiKey stri
 	found := false
 	for _, info := range videoInfos {
 		if info.Topic == "Singing" {
-			message := fmt.Sprintf("Found 'Singing' with channel '%s'\n", info.Channel)
+			message := fmt.Sprintf("Found '%s' with channel '%s'\nLive Status: %s\nUpcoming Status: %s\n", info.Topic, info.Channel, info.LiveStatus, info.UpcomingStatus)
 
 			// Send to Telegram
 			if err := sendMessageToTelegram(botToken, chatID, message); err != nil {
