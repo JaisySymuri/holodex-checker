@@ -9,7 +9,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
+	"os"
+	"os/signal"
 	"github.com/chromedp/chromedp"
 	"github.com/gofrs/flock"
 )
@@ -48,7 +49,7 @@ func checkHolodex(botToken string, chatID int64, phoneNumber string, apiKey stri
 	var videoInfos []VideoInfo
 	err := chromedp.Run(ctx,
 		chromedp.Navigate("https://holodex.net/"),
-		chromedp.WaitVisible("body", chromedp.ByQuery),
+		chromedp.WaitVisible(`a.video-card.no-decoration.d-flex.video-card-fluid.flex-column`, chromedp.ByQuery),
 		chromedp.Evaluate(`
 			Array.from(document.querySelectorAll('a.video-card.no-decoration.d-flex.video-card-fluid.flex-column')).map(card => {
 				const topic = card.querySelector('div.video-topic.rounded-tl-sm')?.innerText.trim() || '';
@@ -140,7 +141,11 @@ func main() {
 	phoneNumber := "628813583993"
 	apiKey := "9490714"
 
-	/// Run the initial check for Holodex immediately
+	// Create a channel to receive OS signals
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+
+	// Run the initial check for Holodex immediately
 	checkHolodex(botToken, chatID, phoneNumber, apiKey)
 
 	// Schedule the task to run every hour at the top of the hour
@@ -152,5 +157,14 @@ func main() {
 
 		// Run the check for Holodex
 		checkHolodex(botToken, chatID, phoneNumber, apiKey)
+
+		// Check if an interrupt signal is received
+		select {
+		case <-signalChan:
+			log.Println("Interrupt signal received. Exiting...")
+			return
+		default:
+			// Continue with the loop
+		}
 	}
 }
