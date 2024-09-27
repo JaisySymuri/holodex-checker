@@ -6,11 +6,12 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"os/signal"
 	"strings"
 	"syscall"
 	"time"
-	"os"
-	"os/signal"
+
 	"github.com/chromedp/chromedp"
 	"github.com/gofrs/flock"
 )
@@ -40,9 +41,9 @@ func checkHolodex(botToken string, chatID int64, phoneNumber string, apiKey stri
 	defer cancel()
 
 	type VideoInfo struct {
-		Topic         string
-		Channel       string
-		LiveStatus    string
+		Topic          string
+		Channel        string
+		LiveStatus     string
 		UpcomingStatus string
 	}
 
@@ -125,16 +126,20 @@ func sendMessageToWhatsApp(phoneNumber string, apiKey string, message string) er
 }
 
 func main() {
-    lock := flock.NewFlock("app.lock")
-    locked, err := lock.TryLock()
-    if err != nil {
-        log.Fatalf("Failed to acquire lock: %v", err)
-    }
-    if !locked {
-        log.Println("Another instance is already running. Exiting.")
-        return
-    }
-    defer lock.Unlock()
+	lock := flock.NewFlock("app.lock")
+	locked, err := lock.TryLock()
+	if err != nil {
+		log.Fatalf("Failed to acquire lock: %v", err)
+	}
+	if !locked {
+		log.Println("Another instance is already running. Exiting.")
+		return
+	}
+	defer lock.Unlock()
+
+	// Wait for a minute to allow internet connection to establish
+	log.Println("Holodex Checker launched, waiting for 1 minute to allow internet connection to establish...")
+	time.Sleep(1 * time.Minute)
 
 	// Hide the console window
 	syscall.NewLazyDLL("kernel32.dll").NewProc("FreeConsole").Call()
