@@ -6,10 +6,10 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
-	"os/signal"
+
+	// "os"
+	// "os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/chromedp/chromedp"
@@ -36,9 +36,24 @@ func sendMessageToTelegram(botToken string, chatID int64, message string) error 
 }
 
 func checkHolodex(botToken string, chatID int64, phoneNumber string, apiKey string) {
-	// Create a new context for the headless browser
-	ctx, cancel := chromedp.NewContext(context.Background())
+	// Create a new context for the headless browser with extended headless options
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", true), // Ensure headless mode
+		chromedp.Flag("disable-gpu", true), // Disable GPU
+		chromedp.Flag("no-sandbox", true),  // Sandbox might cause issues
+		chromedp.Flag("disable-software-rasterizer", true), // Disable rasterization
+		chromedp.Flag("mute-audio", true),  // Mute audio
+		chromedp.Flag("hide-scrollbars", true), // Hide scrollbars to avoid UI
+		chromedp.Flag("window-size", "100,100"), // Set window size to make sure it's headless
+		chromedp.Flag("disable-extensions", true), // Disable extensions
+		chromedp.Flag("remote-debugging-port", "0"), // Disable remote debugging to suppress UI
+	)
+
+	allocatorCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	defer cancel()
+
+	ctx, cancelCtx := chromedp.NewContext(allocatorCtx)
+	defer cancelCtx()
 
 	type VideoInfo struct {
 		Topic          string
@@ -106,6 +121,7 @@ func checkHolodex(botToken string, chatID int64, phoneNumber string, apiKey stri
 	}
 }
 
+
 // Function to send a message to WhatsApp using CallMeBot API
 func sendMessageToWhatsApp(phoneNumber string, apiKey string, message string) error {
 	apiURL := fmt.Sprintf("https://api.callmebot.com/whatsapp.php?phone=%s&text=%s&apikey=%s",
@@ -139,22 +155,16 @@ func main() {
 
 	// Wait for a minute to allow internet connection to establish
 	log.Println("Holodex Checker launched, waiting for 1 minute to allow internet connection to establish...")
-	time.Sleep(1 * time.Minute)
-
-	// Hide the console window
-	syscall.NewLazyDLL("kernel32.dll").NewProc("FreeConsole").Call()
+	time.Sleep(4 * time.Second)
 
 	// Bot Token and Chat ID
 	botToken := "6644758424:AAGARzGvdtkRs-PKb7-bMol7HIH3Um41NNQ"
 	chatID := int64(6250216578)
 
 	// WhatsApp phone number and API key
-	phoneNumber := "628813583993"
-	apiKey := "9490714"
+	phoneNumber := "6289675639535"
+	apiKey := "1925640"
 
-	// Create a channel to receive OS signals
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 
 	// Run the initial check for Holodex immediately
 	checkHolodex(botToken, chatID, phoneNumber, apiKey)
@@ -169,13 +179,6 @@ func main() {
 		// Run the check for Holodex
 		checkHolodex(botToken, chatID, phoneNumber, apiKey)
 
-		// Check if an interrupt signal is received
-		select {
-		case <-signalChan:
-			log.Println("Interrupt signal received. Exiting...")
-			return
-		default:
-			// Continue with the loop
-		}
+
 	}
 }
