@@ -6,14 +6,10 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-
-	// "os"
-	// "os/signal"
 	"strings"
 	"time"
 
 	"github.com/chromedp/chromedp"
-	"github.com/gofrs/flock"
 )
 
 // Function to send a message to Telegram
@@ -35,18 +31,25 @@ func sendMessageToTelegram(botToken string, chatID int64, message string) error 
 	return nil
 }
 
+// Retry function for network calls
+func retry(attempts int, sleep time.Duration, fn func() error) error {
+	for i := 0; i < attempts; i++ {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		log.Printf("Attempt %d failed: %v. Retrying in %s...", i+1, err, sleep)
+		time.Sleep(sleep)
+	}
+	return fmt.Errorf("all attempts failed")
+}
+
 func checkHolodex(botToken string, chatID int64, phoneNumber string, apiKey string) {
-	// Create a new context for the headless browser with extended headless options
+	// Create a new context for the headless browser
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true), // Ensure headless mode
-		chromedp.Flag("disable-gpu", true), // Disable GPU
-		chromedp.Flag("no-sandbox", true),  // Sandbox might cause issues
-		chromedp.Flag("disable-software-rasterizer", true), // Disable rasterization
-		chromedp.Flag("mute-audio", true),  // Mute audio
-		chromedp.Flag("hide-scrollbars", true), // Hide scrollbars to avoid UI
-		chromedp.Flag("window-size", "100,100"), // Set window size to make sure it's headless
-		chromedp.Flag("disable-extensions", true), // Disable extensions
-		chromedp.Flag("remote-debugging-port", "0"), // Disable remote debugging to suppress UI
+		chromedp.Flag("headless", true),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("no-sandbox", true),
 	)
 
 	allocatorCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
@@ -62,65 +65,51 @@ func checkHolodex(botToken string, chatID int64, phoneNumber string, apiKey stri
 		UpcomingStatus string
 	}
 
-	// Run the browser actions
 	var videoInfos []VideoInfo
-	err := chromedp.Run(ctx,
-		chromedp.Navigate("https://holodex.net/"),
-		chromedp.WaitVisible(`a.video-card.no-decoration.d-flex.video-card-fluid.flex-column`, chromedp.ByQuery),
-		chromedp.Evaluate(`
-			Array.from(document.querySelectorAll('a.video-card.no-decoration.d-flex.video-card-fluid.flex-column')).map(card => {
+
+	// Retry the browser actions with 3 attempts
+	err := retry(30, 10*time.Second, func() error {
+		return chromedp.Run(ctx,
+			chromedp.Navigate("https://holodex.net/"),
+			chromedp.WaitVisible(`a.video-card.no-decoration.d-flex.video-card-fluid.flex-column`, chromedp.ByQuery),
+			chromedp.Evaluate(`Array.from(document.querySelectorAll('a.video-card.no-decoration.d-flex.video-card-fluid.flex-column')).map(card => {
 				const topic = card.querySelector('div.video-topic.rounded-tl-sm')?.innerText.trim() || '';
 				const channel = card.querySelector('div.channel-name.video-card-subtitle')?.innerText.trim() || '';
-
-				// Check for both 'text-live' and 'text-upcoming' spans
 				const liveStatus = card.querySelector('div.video-card-subtitle span.text-live')?.innerText.trim() || '';
 				const upcomingStatus = card.querySelector('div.video-card-subtitle span.text-upcoming')?.innerText.trim() || '';
-
 				return { topic, channel, liveStatus, upcomingStatus };
-			});
-		`, &videoInfos),
-	)
+			});`, &videoInfos),
+		)
+	})
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Failed to check Holodex after retries: %v", err)
+		return
 	}
 
-	// Check for Singing topic and send the message
+	// Process video info
 	found := false
 	for _, info := range videoInfos {
 		if info.Topic == "Singing" {
 			message := fmt.Sprintf("Found '%s' with channel '%s'\nLive Status: %s\nUpcoming Status: %s\n", info.Topic, info.Channel, info.LiveStatus, info.UpcomingStatus)
 
-			// Send to Telegram
-			if err := sendMessageToTelegram(botToken, chatID, message); err != nil {
-				log.Fatal(err)
-			}
+			// Send to Telegram and WhatsApp
+			retry(30, 10*time.Second, func() error { return sendMessageToTelegram(botToken, chatID, message) })
+			retry(30, 10*time.Second, func() error { return sendMessageToWhatsApp(phoneNumber, apiKey, message) })
 
-			// Send to WhatsApp
-			if err := sendMessageToWhatsApp(phoneNumber, apiKey, message); err != nil {
-				log.Fatal(err)
-			}
-
-			fmt.Println(message) // Optional: Also print to the terminal
+			fmt.Println(message)
 			found = true
 		}
 	}
 	if !found {
 		message := "No 'Singing' topics found."
 
-		// Send to Telegram
-		if err := sendMessageToTelegram(botToken, chatID, message); err != nil {
-			log.Fatal(err)
-		}
+		// Send to Telegram and WhatsApp
+		retry(30, 10*time.Second, func() error { return sendMessageToTelegram(botToken, chatID, message) })
+		retry(30, 10*time.Second, func() error { return sendMessageToWhatsApp(phoneNumber, apiKey, message) })
 
-		// Send to WhatsApp
-		if err := sendMessageToWhatsApp(phoneNumber, apiKey, message); err != nil {
-			log.Fatal(err)
-		}
-
-		fmt.Println(message) // Optional: Also print to the terminal
+		fmt.Println(message)
 	}
 }
-
 
 // Function to send a message to WhatsApp using CallMeBot API
 func sendMessageToWhatsApp(phoneNumber string, apiKey string, message string) error {
@@ -141,22 +130,8 @@ func sendMessageToWhatsApp(phoneNumber string, apiKey string, message string) er
 	return nil
 }
 
+
 func main() {
-	lock := flock.NewFlock("app.lock")
-	locked, err := lock.TryLock()
-	if err != nil {
-		log.Fatalf("Failed to acquire lock: %v", err)
-	}
-	if !locked {
-		log.Println("Another instance is already running. Exiting.")
-		return
-	}
-	defer lock.Unlock()
-
-	// Wait for a minute to allow internet connection to establish
-	log.Println("Holodex Checker launched, waiting for 1 minute to allow internet connection to establish...")
-	time.Sleep(4 * time.Second)
-
 	// Bot Token and Chat ID
 	botToken := "6644758424:AAGARzGvdtkRs-PKb7-bMol7HIH3Um41NNQ"
 	chatID := int64(6250216578)
@@ -178,7 +153,13 @@ func main() {
 
 		// Run the check for Holodex
 		checkHolodex(botToken, chatID, phoneNumber, apiKey)
-
-
 	}
+
+	// for {
+	// 	// Run the check for Holodex every minute
+	// 	checkHolodex(botToken, chatID, phoneNumber, apiKey)
+	
+	// 	// Sleep for 1 minute before the next run
+	// 	time.Sleep(1 * time.Minute)
+	// }	
 }
