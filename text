@@ -6,3 +6,6 @@ kill -9 2085760
 
 
 PID: 2085760
+
+  git config --global user.email "bestsymuri@gmail.com"
+  git config --global user.name "Jaisy"
