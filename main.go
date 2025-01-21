@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 
 	// "os"
 	// "os/signal"
@@ -14,13 +15,14 @@ import (
 
 	"github.com/chromedp/chromedp"
 	"github.com/gofrs/flock"
+	"github.com/joho/godotenv"
 )
 
 // Function to send a message to Telegram
-func sendMessageToTelegram(botToken string, chatID int64, message string) error {
+func sendMessageToTelegram(botToken string, chatID string, message string) error {
 	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
 	data := url.Values{}
-	data.Set("chat_id", fmt.Sprintf("%d", chatID))
+	data.Set("chat_id", chatID)
 	data.Set("text", message)
 
 	resp, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
@@ -35,7 +37,7 @@ func sendMessageToTelegram(botToken string, chatID int64, message string) error 
 	return nil
 }
 
-func checkHolodex(botToken string, chatID int64, phoneNumber string, apiKey string) {
+func checkHolodex(botToken string, chatID string, phoneNumber string, apiKey string) {
 	// Create a new context for the headless browser with extended headless options
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true), // Ensure headless mode
@@ -142,6 +144,17 @@ func sendMessageToWhatsApp(phoneNumber string, apiKey string, message string) er
 }
 
 func main() {
+	err := godotenv.Load(".env")
+	if err != nil {
+		log.Fatalf("Error loading .env file: %v", err)
+	}
+	
+	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	chatID := os.Getenv("TELEGRAM_CHAT_ID")
+	phoneNumber := os.Getenv("WHATSAPP_PHONE_NUMBER")
+	apiKey := os.Getenv("WHATSAPP_API_KEY")
+
+
 	lock := flock.NewFlock("app.lock")
 	locked, err := lock.TryLock()
 	if err != nil {
@@ -157,13 +170,7 @@ func main() {
 	log.Println("Holodex Checker launched, waiting for 1 minute to allow internet connection to establish...")
 	time.Sleep(4 * time.Second)
 
-	// Bot Token and Chat ID
-	botToken := "6644758424:AAGARzGvdtkRs-PKb7-bMol7HIH3Um41NNQ"
-	chatID := int64(6250216578)
 
-	// WhatsApp phone number and API key
-	phoneNumber := "6289675639535"
-	apiKey := "1925640"
 
 
 	// Run the initial check for Holodex immediately

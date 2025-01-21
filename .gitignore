@@ -1,0 +1,7 @@
+*.env
+*.json
+*.log
+*.lock
+*.html
+*.txt
+*.out
