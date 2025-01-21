@@ -6,21 +6,25 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/joho/godotenv"
+	"github.com/sirupsen/logrus"
 )
 
 // Function to send a message to Telegram
-func sendMessageToTelegram(botToken string, chatID int64, message string) error {
+func sendMessageToTelegram(botToken string, chatID string, message string) error {
 	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
 	data := url.Values{}
-	data.Set("chat_id", fmt.Sprintf("%d", chatID))
+	data.Set("chat_id", chatID)
 	data.Set("text", message)
 
 	resp, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
 	if err != nil {
+		logrus.Error("sendMessageToTelegram error")
 		return err
 	}
 	defer resp.Body.Close()
@@ -44,7 +48,7 @@ func retry(attempts int, sleep time.Duration, fn func() error) error {
 	return fmt.Errorf("all attempts failed")
 }
 
-func checkHolodex(botToken string, chatID int64, phoneNumber string, apiKey string) {
+func checkHolodex(botToken string, chatID string, phoneNumber string, apiKey string) error {
 	// Create a new context for the headless browser
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
@@ -67,34 +71,35 @@ func checkHolodex(botToken string, chatID int64, phoneNumber string, apiKey stri
 
 	var videoInfos []VideoInfo
 
-	// Retry the browser actions with 3 attempts
-	err := retry(30, 10*time.Second, func() error {
-		return chromedp.Run(ctx,
-			chromedp.Navigate("https://holodex.net/"),
-			chromedp.WaitVisible(`a.video-card.no-decoration.d-flex.video-card-fluid.flex-column`, chromedp.ByQuery),
-			chromedp.Evaluate(`Array.from(document.querySelectorAll('a.video-card.no-decoration.d-flex.video-card-fluid.flex-column')).map(card => {
-				const topic = card.querySelector('div.video-topic.rounded-tl-sm')?.innerText.trim() || '';
-				const channel = card.querySelector('div.channel-name.video-card-subtitle')?.innerText.trim() || '';
-				const liveStatus = card.querySelector('div.video-card-subtitle span.text-live')?.innerText.trim() || '';
-				const upcomingStatus = card.querySelector('div.video-card-subtitle span.text-upcoming')?.innerText.trim() || '';
-				return { topic, channel, liveStatus, upcomingStatus };
-			});`, &videoInfos),
-		)
-	})
+	// Perform browser actions
+	err := chromedp.Run(ctx,
+		chromedp.Navigate("https://holodex.net/"),
+		chromedp.WaitVisible(`a.video-card.no-decoration.d-flex.video-card-fluid.flex-column`, chromedp.ByQuery),
+		chromedp.Evaluate(`Array.from(document.querySelectorAll('a.video-card.no-decoration.d-flex.video-card-fluid.flex-column')).map(card => {
+			const topic = card.querySelector('div.video-topic.rounded-tl-sm')?.innerText.trim() || '';
+			const channel = card.querySelector('div.channel-name.video-card-subtitle')?.innerText.trim() || '';
+			const liveStatus = card.querySelector('div.video-card-subtitle span.text-live')?.innerText.trim() || '';
+			const upcomingStatus = card.querySelector('div.video-card-subtitle span.text-upcoming')?.innerText.trim() || '';
+			return { topic, channel, liveStatus, upcomingStatus };
+		});`, &videoInfos),
+	)
 	if err != nil {
-		log.Printf("Failed to check Holodex after retries: %v", err)
-		return
+		return fmt.Errorf("failed to fetch data from Holodex: %w", err)
 	}
 
 	// Process video info
 	found := false
 	for _, info := range videoInfos {
 		if info.Topic == "Singing" {
-			message := fmt.Sprintf("Found '%s' with channel '%s'\nLive Status: %s\nUpcoming Status: %s\n", info.Topic, info.Channel, info.LiveStatus, info.UpcomingStatus)
+			message := fmt.Sprintf("Ubuntu. Found '%s' with channel '%s'\nLive Status: %s\nUpcoming Status: %s\n", info.Topic, info.Channel, info.LiveStatus, info.UpcomingStatus)
 
 			// Send to Telegram and WhatsApp
-			retry(30, 10*time.Second, func() error { return sendMessageToTelegram(botToken, chatID, message) })
-			retry(30, 10*time.Second, func() error { return sendMessageToWhatsApp(phoneNumber, apiKey, message) })
+			if err := sendMessageToTelegram(botToken, chatID, message); err != nil {
+				return fmt.Errorf("failed to send Telegram message: %w", err)
+			}
+			if err := sendMessageToWhatsApp(phoneNumber, apiKey, message); err != nil {
+				return fmt.Errorf("failed to send WhatsApp message: %w", err)
+			}
 
 			fmt.Println(message)
 			found = true
@@ -104,12 +109,18 @@ func checkHolodex(botToken string, chatID int64, phoneNumber string, apiKey stri
 		message := "No 'Singing' topics found."
 
 		// Send to Telegram and WhatsApp
-		retry(30, 10*time.Second, func() error { return sendMessageToTelegram(botToken, chatID, message) })
-		retry(30, 10*time.Second, func() error { return sendMessageToWhatsApp(phoneNumber, apiKey, message) })
+		if err := sendMessageToTelegram(botToken, chatID, message); err != nil {
+			return fmt.Errorf("failed to send Telegram message: %w", err)
+		}
+		if err := sendMessageToWhatsApp(phoneNumber, apiKey, message); err != nil {
+			return fmt.Errorf("failed to send WhatsApp message: %w", err)
+		}
 
 		fmt.Println(message)
 	}
+	return nil
 }
+
 
 // Function to send a message to WhatsApp using CallMeBot API
 func sendMessageToWhatsApp(phoneNumber string, apiKey string, message string) error {
@@ -132,17 +143,26 @@ func sendMessageToWhatsApp(phoneNumber string, apiKey string, message string) er
 
 
 func main() {
-	// Bot Token and Chat ID
-	botToken := "6644758424:AAGARzGvdtkRs-PKb7-bMol7HIH3Um41NNQ"
-	chatID := int64(6250216578)
+	err := godotenv.Load(".env")
+	if err != nil {
+		log.Fatalf("Error loading .env file: %v", err)
+	}
+	
+	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	chatID := os.Getenv("TELEGRAM_CHAT_ID")
+	phoneNumber := os.Getenv("WHATSAPP_PHONE_NUMBER")
+	apiKey := os.Getenv("WHATSAPP_API_KEY")
 
-	// WhatsApp phone number and API key
-	phoneNumber := "6289675639535"
-	apiKey := "1925640"
+	log.Println("checkHolodex started. Connecting to internet...")
 
 
 	// Run the initial check for Holodex immediately
-	checkHolodex(botToken, chatID, phoneNumber, apiKey)
+	err = retry(30, 10*time.Second, func() error {
+		return checkHolodex(botToken, chatID, phoneNumber, apiKey)
+	})
+	if err != nil {
+		logrus.Error("checkHolodex failed after retries: ", err)
+	}
 
 	// Schedule the task to run every hour at the top of the hour
 	for {
@@ -152,7 +172,12 @@ func main() {
 		time.Sleep(time.Until(next))
 
 		// Run the check for Holodex
-		checkHolodex(botToken, chatID, phoneNumber, apiKey)
+		err = retry(30, 10*time.Second, func() error {
+			return checkHolodex(botToken, chatID, phoneNumber, apiKey)
+		})
+		if err != nil {
+			logrus.Error("checkHolodex failed after retries: ", err)
+		}
 	}
 
 	// for {

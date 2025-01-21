@@ -1,11 +1,16 @@
 old no: 6289675639535
 PID: 2000885
 ps aux | grep 2000885
-kill -9 2085760
+
+kill -9 2113587
+ pgrep -af "holodex-checker"
 
 
 
-PID: 2085760
 
   git config --global user.email "bestsymuri@gmail.com"
   git config --global user.name "Jaisy"
+
+
+  go build -o holodex-checker main.go
+  nohup ./holodex-checker &> holodex-checker.log &
