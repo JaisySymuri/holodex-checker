@@ -21,12 +21,18 @@ type VideoInfo struct {
 	UpcomingStatus string
 }
 
-func ErrorFTime(format string, args ...interface{}) error {
-	timestamp := time.Now().Format(time.RFC3339)
-	// Add timestamp to the format string
-	formatWithTimestamp := fmt.Sprintf("[%s] %s", timestamp, format)
-	return fmt.Errorf(formatWithTimestamp, args...)
+// Custom Log Formatter
+type SimpleFormatter struct{}
+
+// Implementing Logrus Formatter interface
+func (f *SimpleFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+	// Formatting the timestamp in a more readable format
+	timeFormat := time.Now().Format("2006-01-02 15:04:05") // Example: 2025-01-23 14:45:18
+	// Create the log message without log level
+	message := fmt.Sprintf("%s %s\n", timeFormat, entry.Message)
+	return []byte(message), nil
 }
+
 
 // Function to send a message to Telegram
 func sendMessageToTelegram(botToken string, chatID string, message string) error {
@@ -37,12 +43,12 @@ func sendMessageToTelegram(botToken string, chatID string, message string) error
 
 	resp, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
 	if err != nil {
-		return ErrorFTime("failed to send Telegram message: %w", err)
+		return fmt.Errorf("failed to send Telegram message: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return ErrorFTime("telegram API failed to receive message, status code: %d", resp.StatusCode)
+		return fmt.Errorf("telegram API failed to receive message, status code: %d", resp.StatusCode)
 	}
 	return nil
 }
@@ -55,12 +61,18 @@ func sendMessageToWhatsApp(phoneNumber string, apiKey string, message string) er
 
 	resp, err := http.Get(apiURL)
 	if err != nil {
-		return ErrorFTime("failed to send WhatsApp message: %w", err)
+		return fmt.Errorf("failed to send WhatsApp message: %w", err)
 	}
 	defer resp.Body.Close()
 
+	// Handle specific status codes
+	if resp.StatusCode == 209 || resp.StatusCode == 210 {
+		logrus.Warnf("WhatsApp API returned status code %d. Skipping retry and continuing...", resp.StatusCode)
+		return nil
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		return ErrorFTime("whatsApp API failed to receive message, status code: %d", resp.StatusCode)
+		return fmt.Errorf("whatsApp API failed to receive message, status code: %d", resp.StatusCode)
 	}
 	return nil
 }
@@ -72,7 +84,7 @@ func retry(attempts int, sleep time.Duration, fn func() error) error {
 		if err == nil {
 			return nil
 		}
-		logrus.Infof("Attempt %d failed: %v. Retrying in %s...", i+1, err, sleep)
+		logrus.Errorf("Attempt %d failed: %v. Retrying in %s...", i+1, err, sleep)
 		time.Sleep(sleep)
 	}
 	return fmt.Errorf("all attempts failed")
@@ -154,8 +166,7 @@ func checkHolodex(botToken string, chatID string, phoneNumber string, apiKey str
 			if err := makeFoundMessage(info, botToken, chatID, phoneNumber, apiKey); err != nil {
 				return err
 			}
-			found = true
-			break
+			found = true			
 		}
 	}
 
@@ -168,6 +179,8 @@ func checkHolodex(botToken string, chatID string, phoneNumber string, apiKey str
 }
 
 func main() {
+	logrus.SetFormatter(&SimpleFormatter{})
+	
 	err := godotenv.Load(".env")
 	if err != nil {
 		logrus.Fatalf("Error loading .env file: %v", err)
