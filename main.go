@@ -156,6 +156,17 @@ func checkHolodex(botToken string, chatID string, phoneNumber string, apiKey str
 		});`, &videoInfos),
 	)
 	if err != nil {
+		// Check if the error is due to "no space left on device"
+		if strings.Contains(err.Error(), "no space left on device") {
+			// Send disk full message to Telegram and WhatsApp
+			if err := makeDiskFullMessage(botToken, chatID, phoneNumber, apiKey); err != nil {
+				return err
+			}
+			logrus.Info("Disk is full. Sleeping for 6 hours to allow cleanup.")
+			time.Sleep(6 * time.Hour)
+			// Return nil so that (for example) an outer loop can try again.
+			return nil
+		}
 		return fmt.Errorf("failed to fetch data from Holodex: %w", err)
 	}
 
@@ -174,6 +185,20 @@ func checkHolodex(botToken string, chatID string, phoneNumber string, apiKey str
 		if err := makeNotFoundMessage(botToken, chatID, phoneNumber, apiKey); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// makeDiskFullMessage sends a disk-full error message to Telegram and WhatsApp.
+func makeDiskFullMessage(botToken string, chatID string, phoneNumber string, apiKey string) error {
+	message := "Error: no space left on device. Disk is full. The app will sleep for 6 hours until cleanup occurs."
+	logrus.Error(message)
+
+	if err := sendMessageToTelegram(botToken, chatID, message); err != nil {
+		return err
+	}
+	if err := sendMessageToWhatsApp(phoneNumber, apiKey, message); err != nil {
+		return err
 	}
 	return nil
 }
