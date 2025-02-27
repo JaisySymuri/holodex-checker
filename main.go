@@ -3,13 +3,16 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/getlantern/systray"
 	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
 )
@@ -26,15 +29,19 @@ type SimpleFormatter struct{}
 
 // Implementing Logrus Formatter interface
 func (f *SimpleFormatter) Format(entry *logrus.Entry) ([]byte, error) {
-	// Formatting the timestamp in a more readable format
-	timeFormat := time.Now().Format("2006-01-02 15:04:05") // Example: 2025-01-23 14:45:18
-	// Create the log message without log level
+	timeFormat := time.Now().Format("2006-01-02 15:04:05")
 	message := fmt.Sprintf("%s %s\n", timeFormat, entry.Message)
 	return []byte(message), nil
 }
 
+var (
+	botToken    string
+	chatID      string
+	phoneNumber string
+	apiKey      string
+	running     bool = true
+)
 
-// Function to send a message to Telegram
 func sendMessageToTelegram(botToken string, chatID string, message string) error {
 	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
 	data := url.Values{}
@@ -65,7 +72,6 @@ func sendMessageToWhatsApp(phoneNumber string, apiKey string, message string) er
 	}
 	defer resp.Body.Close()
 
-	// Handle specific status codes
 	if resp.StatusCode == 209 || resp.StatusCode == 210 {
 		logrus.Warnf("WhatsApp API returned status code %d. Skipping retry and continuing...", resp.StatusCode)
 		return nil
@@ -77,7 +83,6 @@ func sendMessageToWhatsApp(phoneNumber string, apiKey string, message string) er
 	return nil
 }
 
-// Retry function for network calls
 func retry(attempts int, sleep time.Duration, fn func() error) error {
 	for i := 0; i < attempts; i++ {
 		err := fn()
@@ -90,16 +95,14 @@ func retry(attempts int, sleep time.Duration, fn func() error) error {
 	return fmt.Errorf("all attempts failed")
 }
 
-// makeFoundMessage generates the message when a "Singing" topic is found
 func makeFoundMessage(info VideoInfo, botToken string, chatID string, phoneNumber string, apiKey string) error {
 	message := fmt.Sprintf(
-		"Ubuntu. Found '%s' with channel '%s'\nLive Status: %s\nUpcoming Status: %s\n",
+		"Windows: Found '%s' with channel '%s'\nLive Status: %s\nUpcoming Status: %s\n",
 		info.Topic, info.Channel, info.LiveStatus, info.UpcomingStatus,
 	)
 
 	logrus.Info(message)
 
-	// Send to Telegram and WhatsApp
 	if err := sendMessageToTelegram(botToken, chatID, message); err != nil {
 		return err
 	}
@@ -110,13 +113,11 @@ func makeFoundMessage(info VideoInfo, botToken string, chatID string, phoneNumbe
 	return nil
 }
 
-// makeNotFoundMessage generates the message when no "Singing" topic is found
 func makeNotFoundMessage(botToken string, chatID string, phoneNumber string, apiKey string) error {
-	message := "No 'Singing' stream scheduled."
+	message := "Windows: No 'Singing' stream scheduled."
 
 	logrus.Info(message)
 
-	// Send to Telegram and WhatsApp
 	if err := sendMessageToTelegram(botToken, chatID, message); err != nil {
 		return err
 	}
@@ -128,7 +129,6 @@ func makeNotFoundMessage(botToken string, chatID string, phoneNumber string, api
 }
 
 func checkHolodex(botToken string, chatID string, phoneNumber string, apiKey string) error {
-	// Create a new context for the headless browser
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
@@ -143,7 +143,6 @@ func checkHolodex(botToken string, chatID string, phoneNumber string, apiKey str
 
 	var videoInfos []VideoInfo
 
-	// Perform browser actions
 	err := chromedp.Run(ctx,
 		chromedp.Navigate("https://holodex.net/"),
 		chromedp.WaitVisible(`a.video-card.no-decoration.d-flex.video-card-fluid.flex-column`, chromedp.ByQuery),
@@ -156,28 +155,24 @@ func checkHolodex(botToken string, chatID string, phoneNumber string, apiKey str
 		});`, &videoInfos),
 	)
 	if err != nil {
-		// Check if the error is due to "no space left on device"
 		if strings.Contains(err.Error(), "no space left on device") {
-			// Send disk full message to Telegram and WhatsApp
 			if err := makeDiskFullMessage(botToken, chatID, phoneNumber, apiKey); err != nil {
 				return err
 			}
 			logrus.Info("Disk is full. Sleeping for 6 hours to allow cleanup.")
 			time.Sleep(6 * time.Hour)
-			// Return nil so that (for example) an outer loop can try again.
 			return nil
 		}
 		return fmt.Errorf("failed to fetch data from Holodex: %w", err)
 	}
 
-	// Process video info
 	found := false
 	for _, info := range videoInfos {
 		if info.Topic == "Singing" {
 			if err := makeFoundMessage(info, botToken, chatID, phoneNumber, apiKey); err != nil {
 				return err
 			}
-			found = true			
+			found = true
 		}
 	}
 
@@ -186,10 +181,10 @@ func checkHolodex(botToken string, chatID string, phoneNumber string, apiKey str
 			return err
 		}
 	}
+
 	return nil
 }
 
-// makeDiskFullMessage sends a disk-full error message to Telegram and WhatsApp.
 func makeDiskFullMessage(botToken string, chatID string, phoneNumber string, apiKey string) error {
 	message := "Error: no space left on device. Disk is full. The app will sleep for 6 hours until cleanup occurs."
 	logrus.Error(message)
@@ -203,23 +198,57 @@ func makeDiskFullMessage(botToken string, chatID string, phoneNumber string, api
 	return nil
 }
 
-func main() {
-	logrus.SetFormatter(&SimpleFormatter{})
-	
-	err := godotenv.Load(".env")
+func onReady() {
+	iconData, err := os.ReadFile("favicon.ico")
 	if err != nil {
-		logrus.Fatalf("Error loading .env file: %v", err)
+		logrus.Fatalf("Failed to read icon file: %v", err)
 	}
 
-	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
-	chatID := os.Getenv("TELEGRAM_CHAT_ID")
-	phoneNumber := os.Getenv("WHATSAPP_PHONE_NUMBER")
-	apiKey := os.Getenv("WHATSAPP_API_KEY")
+	systray.SetIcon(iconData)
+	systray.SetTitle("Holodex Checker")
+	systray.SetTooltip("Holodex Checker")
 
-	logrus.Info("checkHolodex started. Connecting to internet...")
+	startMenuItem := systray.AddMenuItem("Start", "Start checking Holodex")
+	pauseMenuItem := systray.AddMenuItem("Pause", "Pause checking Holodex")
+	restartMenuItem := systray.AddMenuItem("Restart", "Restart checking Holodex")
+	exitMenuItem := systray.AddMenuItem("Exit", "Exit the application")
+	hideConsoleMenuItem := systray.AddMenuItem("Hide Console", "Hide the console window")
 
+	go func() {
+		for {
+			select {
+			case <-startMenuItem.ClickedCh:
+				if (!running) {
+					running = true
+					logrus.Info("checkHolodex started")
+					go runChecker()
+				}
+			case <-pauseMenuItem.ClickedCh:
+				if (running) {
+					running = false
+					logrus.Info("checkHolodex paused")
+				}
+			case <-restartMenuItem.ClickedCh:
+				running = false
+				logrus.Info("checkHolodex restarting")
+				time.Sleep(2 * time.Second)
+				running = true
+				go runChecker()
+			case <-hideConsoleMenuItem.ClickedCh:
+				syscall.NewLazyDLL("kernel32.dll").NewProc("FreeConsole").Call()
+				logrus.Info("Console window hidden")
+			case <-exitMenuItem.ClickedCh:
+				systray.Quit()
+				logrus.Info("Exiting...")
+				return
+			}
+		}
+	}()
+}
+
+func runChecker() {
 	// Run the initial check for Holodex immediately
-	err = retry(30, 10*time.Second, func() error {
+	err := retry(30, 10*time.Second, func() error {
 		return checkHolodex(botToken, chatID, phoneNumber, apiKey)
 	})
 	if err != nil {
@@ -227,13 +256,11 @@ func main() {
 	}
 
 	// Schedule the task to run every hour at the top of the hour
-	for {
+	for running {
 		now := time.Now()
-		// Calculate the next hour's start time
 		next := now.Truncate(time.Hour).Add(time.Hour)
 		time.Sleep(time.Until(next))
 
-		// Run the check for Holodex
 		err = retry(30, 10*time.Second, func() error {
 			return checkHolodex(botToken, chatID, phoneNumber, apiKey)
 		})
@@ -241,12 +268,58 @@ func main() {
 			logrus.Error("checkHolodex failed after retries: ", err)
 		}
 	}
+}
 
-	// for {
-	// 	// Run the check for Holodex every minute
-	// 	checkHolodex(botToken, chatID, phoneNumber, apiKey)
+func onExit() {
+	logrus.Info("Application exited")
+}
 
-	// 	// Sleep for 1 minute before the next run
-	// 	time.Sleep(1 * time.Minute)
-	// }
+
+// Custom log writer to prepend logs to a file
+type PrependFileWriter struct {
+	filename string
+}
+
+func (w *PrependFileWriter) Write(p []byte) (n int, err error) {
+	// Read existing content
+	content, err := os.ReadFile(w.filename)
+	if err != nil && !os.IsNotExist(err) {
+		return 0, fmt.Errorf("failed to read existing log file: %w", err)
+	}
+
+	// Prepend new log entry
+	newContent := append(p, content...)
+
+	// Write updated content back to the file
+	err = os.WriteFile(w.filename, newContent, 0666)
+	if err != nil {
+		return 0, fmt.Errorf("failed to write log file: %w", err)
+	}
+
+	return len(p), nil
+}
+
+func main() {
+	logrus.SetFormatter(&SimpleFormatter{})
+
+	err := godotenv.Load(".env")
+	if err != nil {
+		logrus.Fatalf("Error loading .env file: %v", err)
+	}
+
+	botToken = os.Getenv("TELEGRAM_BOT_TOKEN")
+	chatID = os.Getenv("TELEGRAM_CHAT_ID")
+	phoneNumber = os.Getenv("WHATSAPP_PHONE_NUMBER")
+	apiKey = os.Getenv("WHATSAPP_API_KEY")
+
+	logrus.Info("checkHolodex started. Connecting to internet...")
+
+	// Set up logging to both terminal and debug.log file
+	fileWriter := &PrependFileWriter{filename: "debug.log"}
+	multiWriter := io.MultiWriter(os.Stdout, fileWriter)
+	logrus.SetOutput(multiWriter)
+
+
+	go runChecker()
+	systray.Run(onReady, onExit)
 }
