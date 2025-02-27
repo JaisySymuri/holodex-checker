@@ -6,8 +6,6 @@ require (
 	github.com/chromedp/chromedp v0.13.0
 	github.com/getlantern/systray v1.2.2
 	github.com/joho/godotenv v1.5.1
-	github.com/lxn/walk v0.0.0-20210112085537-c389da54e794
-	github.com/lxn/win v0.0.0-20210218163916-a377121e959e
 	github.com/sirupsen/logrus v1.9.3
 )
 
@@ -27,5 +25,4 @@ require (
 	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/oxtoacart/bpool v0.0.0-20190530202638-03653db5a59c // indirect
 	golang.org/x/sys v0.30.0 // indirect
-	gopkg.in/Knetic/govaluate.v3 v3.0.0 // indirect
 )
