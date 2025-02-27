@@ -299,6 +299,24 @@ func (w *PrependFileWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+// Custom multi-writer to handle os.Stdout and file separately
+type SafeMultiWriter struct {
+	writers []io.Writer
+}
+
+func (w *SafeMultiWriter) Write(p []byte) (n int, err error) {
+	for _, writer := range w.writers {
+		_, err := writer.Write(p)
+		if err != nil && writer == os.Stdout {
+			// Ignore os.Stdout errors
+			continue
+		} else if err != nil {
+			return 0, err
+		}
+	}
+	return len(p), nil
+}
+
 func main() {
 	logrus.SetFormatter(&SimpleFormatter{})
 
@@ -316,7 +334,7 @@ func main() {
 
 	// Set up logging to both terminal and debug.log file
 	fileWriter := &PrependFileWriter{filename: "debug.log"}
-	multiWriter := io.MultiWriter(os.Stdout, fileWriter)
+	multiWriter := &SafeMultiWriter{writers: []io.Writer{os.Stdout, fileWriter}}
 	logrus.SetOutput(multiWriter)
 
 
