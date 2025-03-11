@@ -128,13 +128,3 @@ func getStartTime(videoInfos []VideoInfo) (map[string]time.Time, error) {
 	return results, nil
 }
 
-// func upcomingInSeconds(startTimes map[string]time.Time) (map[string]int64, error) {
-// 	now := timeNow() // timeNow() returns the current time.
-// 	secondsUntilStart := make(map[string]int64)
-
-// 	for link, startTime := range startTimes {
-// 		duration := startTime.Sub(now)
-// 		secondsUntilStart[link] = int64(duration.Seconds())
-// 	}
-// 	return secondsUntilStart, nil
-// }

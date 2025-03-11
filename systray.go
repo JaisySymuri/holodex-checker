@@ -50,7 +50,7 @@ func onReady(km *KaraokeManager) {
 				syscall.NewLazyDLL("kernel32.dll").NewProc("FreeConsole").Call()
 				logrus.Info("Console window hidden")
 			case <-stopFocusMode.ClickedCh:
-				km.StopFocusModeForFirst()
+				stopAllFocusModes()
 			case <-exitMenuItem.ClickedCh:
 				systray.Quit()
 				logrus.Info("Exiting...")

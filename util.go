@@ -63,12 +63,4 @@ func (km *KaraokeManager) GetStreams() map[string]time.Time {
 	return copy
 }
 
-// StopFocusModeForFirst stops focus mode for the earliest stream.
-func (km *KaraokeManager) StopFocusModeForFirst() {
-	km.mu.RLock()
-	defer km.mu.RUnlock()
-	for link := range km.streams {
-		stopFocusMode(link)
-		return
-	}
-}
+

@@ -17,23 +17,25 @@ var (
 	running     bool = true
 )
 
-func notifyMe(videoInfos []VideoInfo) error {
-	found := false
+func karaokeHandler(videoInfos []VideoInfo) ([]VideoInfo, error) {
+	var singingInfos []VideoInfo
+
 	for _, info := range videoInfos {
 		if info.Topic == "Singing" {
+			singingInfos = append(singingInfos, info)
 			if err := makeFoundMessage(info, botToken, chatID, phoneNumber, apiKey); err != nil {
-				return err
+				return nil, err
 			}
-			found = true
 		}
 	}
 
-	if !found {
+	if len(singingInfos) == 0 {
 		if err := makeNotFoundMessage(botToken, chatID, phoneNumber, apiKey); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+
+	return singingInfos, nil
 }
 
 // Only one stream should be retrieved since it filters by the link, but still maintaining the parameter as array? of VideoInfo struct since it's convinient for testing
@@ -42,13 +44,14 @@ func focusNotifyMe(videoInfos []VideoInfo) error {
 	for _, info := range videoInfos {
 		if info.Duration != "" {
 			if err := makeStreamStartMessage(info, botToken, chatID, phoneNumber, apiKey); err != nil {
-				return err			}
+				return err
+			}
 
 		}
 	}
 
 	for _, info := range videoInfos {
-		if info.Duration == ""{
+		if info.Duration == "" {
 			logrus.Infof("Focus mode: The stream scheduled for %s - %s hasn't started yet", info.Channel, info.YoutubeLink)
 		}
 	}
@@ -116,9 +119,9 @@ func makeFoundMessage(info VideoInfo, botToken string, chatID string, phoneNumbe
 
 func makeStreamStartMessage(info VideoInfo, botToken string, chatID string, phoneNumber string, apiKey string) error {
 	// Extract video ID from "/watch/{videoID}" format
-	videoID := strings.TrimPrefix(info.YoutubeLink, "/watch/") 
+	videoID := strings.TrimPrefix(info.YoutubeLink, "/watch/")
 
-	message := fmt.Sprintf("%s Karaoke stream has started! - https://youtu.be/%s", info.Channel, videoID)
+	message := fmt.Sprintf("%s's karaoke stream has started! - https://youtu.be/%s", info.Channel, videoID)
 
 	logrus.Info(message)
 

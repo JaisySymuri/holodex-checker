@@ -21,7 +21,7 @@ var (
 	focusModesMu sync.Mutex
 )
 
-// startFocusMode starts printing the given link every 4 seconds.
+// startFocusMode starts calls checkHolodex for the given link every 4 minutes.
 // If focus mode is already running for the link, it does nothing.
 func startFocusMode(link string) {
 	focusModesMu.Lock()
@@ -42,6 +42,12 @@ func startFocusMode(link string) {
 
 	// Launch a goroutine that scrape holodex every 4 minutes.
 	go func() {
+		defer func() {
+			focusModesMu.Lock()
+			delete(focusModes, link)
+			focusModesMu.Unlock()
+		}()
+	
 		// Immediately trigger the first print.
 		logrus.Info("Scraping:", link)
 
@@ -124,6 +130,16 @@ func stopFocusMode(link string) {
 	} else {
 		fmt.Printf("No focus mode running for %s\n", link)
 	}
+}
+
+func stopAllFocusModes() {
+    focusModesMu.Lock()
+    defer focusModesMu.Unlock()
+    for link, fm := range focusModes {
+        close(fm.stopChan)
+        delete(focusModes, link)
+        fmt.Printf("Focus mode stopped for %s\n", link)
+    }
 }
 
 // scheduleFocusMode schedules the start of focus mode for each event.
