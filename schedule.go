@@ -35,12 +35,12 @@ func startFocusMode(link string) {
 
 	// Create a new FocusMode instance.
 	fm := &FocusMode{
-		ticker:   time.NewTicker(4 * time.Minute),
+		ticker:   time.NewTicker(2 * time.Minute),
 		stopChan: make(chan struct{}),
 	}
 	focusModes[link] = fm
 
-	// Launch a goroutine that scrape holodex every 4 minutes.
+	// Launch a goroutine that scrape holodex every 2 minutes.
 	go func() {
 		defer func() {
 			focusModesMu.Lock()
