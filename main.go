@@ -43,7 +43,7 @@ func mainLogic(km *KaraokeManager) {
 }
 
 func main() {
-	setLog()
+	SetLog()
 	setEnv()
 
 	km := NewKaraokeManager()
