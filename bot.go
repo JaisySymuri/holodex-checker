@@ -42,7 +42,7 @@ func karaokeHandler(videoInfos []VideoInfo) ([]VideoInfo, error) {
 func focusNotifyMe(videoInfos []VideoInfo) error {
 
 	for _, info := range videoInfos {
-		if info.Duration != "" {
+		if info.UpcomingStatus == "Live Now" {
 			if err := makeStreamStartMessage(info, botToken, chatID, phoneNumber, apiKey); err != nil {
 				return err
 			}
@@ -51,7 +51,7 @@ func focusNotifyMe(videoInfos []VideoInfo) error {
 	}
 
 	for _, info := range videoInfos {
-		if info.Duration == "" {
+		if info.Duration != "Live Now" {
 			logrus.Infof("Focus mode: The stream scheduled for %s - %s hasn't started yet", info.Channel, info.YoutubeLink)
 		}
 	}
