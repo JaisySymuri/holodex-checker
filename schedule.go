@@ -90,6 +90,7 @@ func focusScrape(link string) error {
 		logrus.Debugf("Checking video: %s", video.YoutubeLink)
 		if video.YoutubeLink == link {
 			filteredVideos = append(filteredVideos, video)
+			break
 		}
 	}
 	hScraper.videoInfos = filteredVideos
