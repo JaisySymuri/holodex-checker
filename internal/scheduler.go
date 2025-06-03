@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"fmt"
@@ -21,9 +21,9 @@ var (
 	focusModesMu sync.Mutex
 )
 
-// startFocusMode starts calls checkHolodex for the given link every 4 minutes.
+// StartFocusMode starts calls checkHolodex for the given link every 4 minutes.
 // If focus mode is already running for the link, it does nothing.
-func startFocusMode(link string) {
+func StartFocusMode(link string) {
 	focusModesMu.Lock()
 	defer focusModesMu.Unlock()
 
@@ -71,52 +71,7 @@ func startFocusMode(link string) {
 	}()
 }
 
-func focusScrape(link string) error {
-	// Initialize a new HolodexScraper instance.
-	hScraper := &HolodexScraper{}
 
-	// Attempt to scrape holodex.net with retries.
-	err := retry(30, 10*time.Second, func() error {
-		return hScraper.checkHolodex("https://holodex.net/")
-	})
-	if err != nil {
-		logrus.Error("checkHolodex failed after retries: ", err)
-		return err
-	}
-
-	// Filter the videos based on the provided link.
-	filteredVideos := []VideoInfo{}
-	for _, video := range hScraper.videoInfos {
-		logrus.Debugf("Checking video: %s", video.YoutubeLink)
-		if video.YoutubeLink == link {
-			filteredVideos = append(filteredVideos, video)
-			break
-		}
-	}
-	hScraper.videoInfos = filteredVideos
-
-	// If no matching stream is found, log a message and exit.
-	if len(filteredVideos) == 0 {
-		// Check if there is at least one video to retrieve channel info.
-		if len(hScraper.videoInfos) > 0 {
-			logrus.Infof("Focus mode: No 'Singing' stream scheduled for %s - %s. The stream might've been canceled", hScraper.videoInfos[0].Channel, link)
-		} else {
-			logrus.Infof("Focus mode: No 'Singing' stream scheduled for link %s", link)
-		}
-		return nil
-	}
-
-	// Notify with the filtered video info.
-	err = retry(30, 10*time.Second, func() error {
-		return focusNotifyMe(hScraper.videoInfos)
-	})
-	if err != nil {
-		logrus.Error("notifyMe failed after retries: ", err)
-		return err
-	}
-
-	return nil
-}
 
 // stopFocusMode stops the focus mode for the given link.
 func stopFocusMode(link string) {
@@ -161,7 +116,7 @@ func scheduleFocusMode(events map[string]time.Time) {
 		// Schedule startFocusMode to be called at the event time.
 		go func(link string, delay time.Duration) {
 			time.AfterFunc(delay, func() {
-				startFocusMode(link)
+				StartFocusMode(link)
 			})
 		}(link, delay)
 	}

@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"os"
@@ -9,7 +9,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func onReady(km *KaraokeManager) {
+func OnReady(km *KaraokeManager) {
 	iconData, err := os.ReadFile("favicon.ico")
 	if err != nil {
 		logrus.Fatalf("Failed to read icon file: %v", err)
@@ -30,22 +30,22 @@ func onReady(km *KaraokeManager) {
 		for {
 			select {
 			case <-startMenuItem.ClickedCh:
-				if !running {
-					running = true
+				if !Running {
+					Running = true
 					logrus.Info("checkHolodex started")
-					go mainLogic(km)
+					go Monitor(km)
 				}
 			case <-pauseMenuItem.ClickedCh:
-				if running {
-					running = false
+				if Running {
+					Running = false
 					logrus.Info("checkHolodex paused")
 				}
 			case <-restartMenuItem.ClickedCh:
-				running = false
+				Running = false
 				logrus.Info("checkHolodex restarting")
 				time.Sleep(2 * time.Second)
-				running = true
-				go mainLogic(km)
+				Running = true
+				go Monitor(km)
 			case <-hideConsoleMenuItem.ClickedCh:
 				syscall.NewLazyDLL("kernel32.dll").NewProc("FreeConsole").Call()
 				logrus.Info("Console window hidden")
@@ -60,6 +60,6 @@ func onReady(km *KaraokeManager) {
 	}()
 }
 
-func onExit() {
+func OnExit() {
 	logrus.Info("Application exited")
 }

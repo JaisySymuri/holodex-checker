@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"fmt"
@@ -9,6 +9,11 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
 )
+
+// Simulate timeNow function
+func timeNow() time.Time {
+	return time.Now()
+}
 
 func retry(attempts int, sleep time.Duration, fn func() error) error {
 	for i := 0; i < attempts; i++ {
@@ -22,7 +27,7 @@ func retry(attempts int, sleep time.Duration, fn func() error) error {
 	return fmt.Errorf("all attempts failed")
 }
 
-func setEnv() {
+func SetEnv() {
 	err := godotenv.Load(".env")
 	if err != nil {
 		logrus.Fatalf("Error loading .env file: %v", err)
@@ -63,4 +68,36 @@ func (km *KaraokeManager) GetStreams() map[string]time.Time {
 	return copy
 }
 
+func Monitor(km *KaraokeManager) {
+	hScraper := &HolodexScraper{}
+	var karaokeStreams []VideoInfo
+
+	err := retry(30, 10*time.Second, func() error {
+		return hScraper.checkHolodex("https://holodex.net/")
+	})
+	if err != nil {
+		logrus.Error("checkHolodex failed after retries: ", err)
+	}
+
+	err = retry(30, 10*time.Second, func() error {
+		var err error
+		karaokeStreams, err = karaokeHandler(hScraper.videoInfos)
+		return err
+	})
+
+	if err != nil {
+		logrus.Error("notifyMe failed after retries: ", err)
+	}
+
+	ks, err := getStartTime(karaokeStreams)
+	if err != nil {
+		logrus.Error("Errors encountered while retrieving start times: ", err)
+	}
+
+	// Update the manager.
+	km.SetStreams(ks)
+
+	// Schedule focus mode for each karaoke stream.
+	go scheduleFocusMode(ks)	
+}
 

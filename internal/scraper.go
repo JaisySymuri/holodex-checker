@@ -1,9 +1,8 @@
-package main
+package internal
 
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -65,66 +64,49 @@ func (h *HolodexScraper) checkHolodex(holodexUrl string) error {
 	return nil
 }
 
-// Simulate timeNow function
-func timeNow() time.Time {
-	return time.Now()
-}
+func focusScrape(link string) error {
+	// Initialize a new HolodexScraper instance.
+	hScraper := &HolodexScraper{}
 
-func getStartTime(videoInfos []VideoInfo) (map[string]time.Time, error) {
-	results := make(map[string]time.Time)
-	now := timeNow()
-	loc := now.Location()
-	var errors []string
+	// Attempt to scrape holodex.net with retries.
+	err := retry(30, 10*time.Second, func() error {
+		return hScraper.checkHolodex("https://holodex.net/")
+	})
+	if err != nil {
+		logrus.Error("checkHolodex failed after retries: ", err)
+		return err
+	}
 
-	dateRegex := regexp.MustCompile(`Starts (\d{1,2}/\d{1,2}/\d{4})`)
-	timeRegex := regexp.MustCompile(`\((\d{1,2}:\d{2} (AM|PM))\)`)
-
-	for _, video := range videoInfos {
-		if video.UpcomingStatus == "" {
-			continue
+	// Filter the videos based on the provided link.
+	filteredVideos := []VideoInfo{}
+	for _, video := range hScraper.videoInfos {
+		logrus.Debugf("Checking video: %s", video.YoutubeLink)
+		if video.YoutubeLink == link {
+			filteredVideos = append(filteredVideos, video)
+			break
 		}
+	}
+	hScraper.videoInfos = filteredVideos
 
-		// Skip if no time component is found.
-		timeMatch := timeRegex.FindStringSubmatch(video.UpcomingStatus)
-		if timeMatch == nil {
-			continue
-		}
-
-		// Parse the time component.
-		parsedTime, err := time.ParseInLocation("3:04 PM", timeMatch[1], loc)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("Invalid time for %s: %s", video.YoutubeLink, timeMatch[1]))
-			continue
-		}
-
-		// Parse the date if available; if not, default to today's date.
-		dateMatch := dateRegex.FindStringSubmatch(video.UpcomingStatus)
-		var startDate time.Time
-		if dateMatch != nil {
-			parsedDate, err := time.ParseInLocation("1/2/2006", dateMatch[1], loc)
-			if err != nil {
-				errors = append(errors, fmt.Sprintf("Invalid date for %s: %s", video.YoutubeLink, dateMatch[1]))
-				continue
-			}
-			startDate = parsedDate
+	// If no matching stream is found, log a message and exit.
+	if len(filteredVideos) == 0 {
+		// Check if there is at least one video to retrieve channel info.
+		if len(hScraper.videoInfos) > 0 {
+			logrus.Infof("Focus mode: No 'Singing' stream scheduled for %s - %s. The stream might've been canceled", hScraper.videoInfos[0].Channel, link)
 		} else {
-			startDate = now
+			logrus.Infof("Focus mode: No 'Singing' stream scheduled for link %s", link)
 		}
-
-		startTime := time.Date(startDate.Year(), startDate.Month(), startDate.Day(), parsedTime.Hour(), parsedTime.Minute(), 0, 0, loc)
-
-		// Skip if the resulting start time is in the past.
-		if startTime.Before(now) {
-			errors = append(errors, fmt.Sprintf("Skipping past date for %s: %s", video.YoutubeLink, video.UpcomingStatus))
-			continue
-		}
-
-		results[video.YoutubeLink] = startTime
+		return nil
 	}
 
-	if len(errors) > 0 {
-		return results, fmt.Errorf("errors encountered: \n%s", strings.Join(errors, "\n"))
+	// Notify with the filtered video info.
+	err = retry(30, 10*time.Second, func() error {
+		return focusNotifyMe(hScraper.videoInfos)
+	})
+	if err != nil {
+		logrus.Error("notifyMe failed after retries: ", err)
+		return err
 	}
-	return results, nil
+
+	return nil
 }
-

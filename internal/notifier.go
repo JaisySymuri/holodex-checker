@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"fmt"
@@ -14,35 +14,14 @@ var (
 	chatID      string
 	phoneNumber string
 	apiKey      string
-	running     bool = true
+	Running     bool = true
 )
-
-func karaokeHandler(videoInfos []VideoInfo) ([]VideoInfo, error) {
-	var singingInfos []VideoInfo
-
-	for _, info := range videoInfos {
-		if info.Topic == "Singing" {
-			singingInfos = append(singingInfos, info)
-			if err := makeFoundMessage(info, botToken, chatID, phoneNumber, apiKey); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	if len(singingInfos) == 0 {
-		if err := makeNotFoundMessage(botToken, chatID, phoneNumber, apiKey); err != nil {
-			return nil, err
-		}
-	}
-
-	return singingInfos, nil
-}
 
 // Only one stream should be retrieved since it filters by the link, but still maintaining the parameter as array? of VideoInfo struct since it's convinient for testing
 func focusNotifyMe(videoInfos []VideoInfo) error {
-
 	for _, info := range videoInfos {
-		if info.UpcomingStatus == "Live Now" {
+		fmt.Println("LiveStatus: ", info.LiveStatus)
+		if info.LiveStatus == "Live Now" {
 			if err := makeStreamStartMessage(info, botToken, chatID, phoneNumber, apiKey); err != nil {
 				return err
 			}
@@ -51,7 +30,7 @@ func focusNotifyMe(videoInfos []VideoInfo) error {
 	}
 
 	for _, info := range videoInfos {
-		if info.Duration != "Live Now" {
+		if info.LiveStatus != "Live Now" {
 			logrus.Infof("Focus mode: The stream scheduled for %s - %s hasn't started yet", info.Channel, info.YoutubeLink)
 		}
 	}
