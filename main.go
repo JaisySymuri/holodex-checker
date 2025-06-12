@@ -2,6 +2,7 @@ package main
 
 import (
 	"holodex-checker-windows/internal"
+	"syscall"
 	"time"
 
 	"github.com/getlantern/systray"
@@ -21,6 +22,8 @@ func main() {
 	go func() {
 		// Run the initial check for Holodex immediately
 		internal.Monitor(km)
+
+		syscall.NewLazyDLL("kernel32.dll").NewProc("FreeConsole").Call()
 
 		// Run the check for Holodex every hour
 		go func() {
