@@ -28,6 +28,8 @@ func retry(attempts int, sleep time.Duration, fn func() error) error {
 }
 
 func SetEnv() {
+	logrus.Info("Step 1: Calling inside the setENV")
+
 	err := godotenv.Load(".env")
 	if err != nil {
 		logrus.Fatalf("Error loading .env file: %v", err)
@@ -37,6 +39,7 @@ func SetEnv() {
 	chatID = os.Getenv("TELEGRAM_CHAT_ID")
 	phoneNumber = os.Getenv("WHATSAPP_PHONE_NUMBER")
 	apiKey = os.Getenv("WHATSAPP_API_KEY")
+	xApiKey = os.Getenv("XAPIKEY")
 }
 
 type KaraokeManager struct {
@@ -69,35 +72,44 @@ func (km *KaraokeManager) GetStreams() map[string]time.Time {
 }
 
 func Monitor(km *KaraokeManager) {
-	hScraper := &HolodexScraper{}
-	var karaokeStreams []VideoInfo
+	apiClient := NewAPIClient(xApiKey)
+	var karaokeStreams []APIVideoInfo
 
 	err := retry(30, 10*time.Second, func() error {
-		return hScraper.checkHolodex("https://holodex.net/")
-	})
-	if err != nil {
-		logrus.Error("checkHolodex failed after retries: ", err)
-	}
-
-	err = retry(30, 10*time.Second, func() error {
 		var err error
-		karaokeStreams, err = karaokeHandler(hScraper.videoInfos)
+		karaokeStreams, err = apiClient.FetchVideos("Hololive", "singing")
 		return err
 	})
-
 	if err != nil {
-		logrus.Error("notifyMe failed after retries: ", err)
+		logrus.Error("FetchVideos failed after retries: ", err)
+	}	
+
+	// same retry + handler
+	err = retry(30, 10*time.Second, func() error {
+		var err error
+		karaokeStreams, err = karaokeHandler(karaokeStreams)
+		return err
+	})
+	if err != nil {
+		logrus.Error("karaokeHandler failed after retries: ", err)
 	}
 
 	ks, err := getStartTime(karaokeStreams)
 	if err != nil {
-		logrus.Error("Errors encountered while retrieving start times: ", err)
+		logrus.Error("Error retrieving start times: ", err)
 	}
 
-	// Update the manager.
 	km.SetStreams(ks)
-
-	// Schedule focus mode for each karaoke stream.
-	go scheduleFocusMode(ks)	
+	go scheduleFocusMode(ks)
 }
+
+func formatDuration(d time.Duration) string {
+	if d < 0 {
+		return "already started"
+	}
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	return fmt.Sprintf("%dh %dm", h, m)
+}
+
 

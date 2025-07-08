@@ -5,23 +5,16 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
-var (
-	botToken    string
-	chatID      string
-	phoneNumber string
-	apiKey      string
-	Running     bool = true
-)
-
 // Only one stream should be retrieved since it filters by the link, but still maintaining the parameter as array? of VideoInfo struct since it's convinient for testing
-func focusNotifyMe(videoInfos []VideoInfo) error {
+func focusNotifyMe(videoInfos []APIVideoInfo) error {
 	for _, info := range videoInfos {
-		fmt.Println("LiveStatus: ", info.LiveStatus)
-		if info.LiveStatus == "Live Now" {
+		fmt.Println("LiveStatus: ", info.Status)
+		if info.Status == "live" {
 			if err := makeStreamStartMessage(info, botToken, chatID, phoneNumber, apiKey); err != nil {
 				return err
 			}
@@ -30,8 +23,8 @@ func focusNotifyMe(videoInfos []VideoInfo) error {
 	}
 
 	for _, info := range videoInfos {
-		if info.LiveStatus != "Live Now" {
-			logrus.Infof("Focus mode: The stream scheduled for %s - %s hasn't started yet", info.Channel, info.YoutubeLink)
+		if info.Status != "live" {
+			logrus.Infof("Focus mode: The stream scheduled for %s - %s hasn't started yet", info.Channel, info.ID)
 		}
 	}
 	return nil
@@ -78,10 +71,25 @@ func sendMessageToWhatsApp(phoneNumber string, apiKey string, message string) er
 	return nil
 }
 
-func makeFoundMessage(info VideoInfo, botToken string, chatID string, phoneNumber string, apiKey string) error {
+func makeFoundMessage(info APIVideoInfo, botToken string, chatID string, phoneNumber string, apiKey string) error {
+	var startTime time.Time
+	var err error
+
+	if info.StartScheduled != "" {
+		startTime, err = time.Parse(time.RFC3339, info.StartScheduled)
+		if err != nil {
+			logrus.Debugf("Start Scheduled time for %s is not in RFC3339 format: %s", info.ID, info.StartScheduled)
+			return fmt.Errorf("failed to parse StartScheduled time: %w", err)
+		}
+	} else {
+		logrus.Debugf("Start Scheduled time for %s is empty, skipping parse", info.ID)
+	}
+
+	durationUntilStart := time.Until(startTime)
+
 	message := fmt.Sprintf(
-		"Windows: Found '%s' with channel '%s'\nLive Status: %s\nUpcoming Status: %s\n",
-		info.Topic, info.Channel, info.LiveStatus, info.UpcomingStatus,
+		"Live Status: %s\nAPI: Found '%s' with channel '%s'\nStarts In: %s\n",
+		info.TopicID, info.Channel, info.Status, formatDuration(durationUntilStart),
 	)
 
 	logrus.Info(message)
@@ -96,11 +104,12 @@ func makeFoundMessage(info VideoInfo, botToken string, chatID string, phoneNumbe
 	return nil
 }
 
-func makeStreamStartMessage(info VideoInfo, botToken string, chatID string, phoneNumber string, apiKey string) error {
+func makeStreamStartMessage(info APIVideoInfo, botToken string, chatID string, phoneNumber string, apiKey string) error {
 	// Extract video ID from "/watch/{videoID}" format
-	videoID := strings.TrimPrefix(info.YoutubeLink, "/watch/")
+	videoID := strings.TrimPrefix(info.ID, "/watch/")
 
-	message := fmt.Sprintf("%s's karaoke stream has started! - https://youtu.be/%s", info.Channel, videoID)
+	// Updated URL format
+	message := fmt.Sprintf("%s's karaoke stream has started! - https://www.youtube.com/watch?v=%s", info.Channel, videoID)
 
 	logrus.Info(message)
 
@@ -115,7 +124,7 @@ func makeStreamStartMessage(info VideoInfo, botToken string, chatID string, phon
 }
 
 func makeNotFoundMessage(botToken string, chatID string, phoneNumber string, apiKey string) error {
-	message := "Windows: No 'Singing' stream scheduled."
+	message := "API: No 'Singing' stream scheduled."
 
 	logrus.Info(message)
 
@@ -129,15 +138,4 @@ func makeNotFoundMessage(botToken string, chatID string, phoneNumber string, api
 	return nil
 }
 
-func makeDiskFullMessage(botToken string, chatID string, phoneNumber string, apiKey string) error {
-	message := "Error: no space left on device. Disk is full. The app will sleep for 6 hours until cleanup occurs."
-	logrus.Error(message)
 
-	if err := sendMessageToTelegram(botToken, chatID, message); err != nil {
-		return err
-	}
-	if err := sendMessageToWhatsApp(phoneNumber, apiKey, message); err != nil {
-		return err
-	}
-	return nil
-}

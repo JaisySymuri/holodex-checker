@@ -23,13 +23,13 @@ var (
 
 // StartFocusMode starts calls checkHolodex for the given link every 4 minutes.
 // If focus mode is already running for the link, it does nothing.
-func StartFocusMode(link string) {
+func StartFocusMode(videoID string) {
 	focusModesMu.Lock()
 	defer focusModesMu.Unlock()
 
 	// Check if already running.
-	if _, exists := focusModes[link]; exists {
-		fmt.Printf("Focus mode already running for %s\n", link)
+	if _, exists := focusModes[videoID]; exists {
+		fmt.Printf("Focus mode already running for %s\n", videoID)
 		return
 	}
 
@@ -38,20 +38,20 @@ func StartFocusMode(link string) {
 		ticker:   time.NewTicker(2 * time.Minute),
 		stopChan: make(chan struct{}),
 	}
-	focusModes[link] = fm
+	focusModes[videoID] = fm
 
 	// Launch a goroutine that scrape holodex every 2 minutes.
 	go func() {
 		defer func() {
 			focusModesMu.Lock()
-			delete(focusModes, link)
+			delete(focusModes, videoID)
 			focusModesMu.Unlock()
 		}()
 	
 		// Immediately trigger the first print.
-		logrus.Info("Scraping:", link)
+		logrus.Info("Scraping:", videoID)
 
-		if err := focusScrape(link); err != nil {
+		if err := focusScrape(videoID); err != nil {
 			logrus.Errorf("Error in focus mode: %v", err)
 			return
 		}
@@ -59,7 +59,7 @@ func StartFocusMode(link string) {
 		for {
 			select {
 			case <-fm.ticker.C:
-				if err := focusScrape(link); err != nil {
+				if err := focusScrape(videoID); err != nil {
 					logrus.Errorf("Error in focus mode: %v", err)
 					return
 				}
@@ -101,23 +101,23 @@ func stopAllFocusModes() {
 // scheduleFocusMode schedules the start of focus mode for each event.
 // When the scheduled time is reached, it calls startFocusMode for the link.
 func scheduleFocusMode(events map[string]time.Time) {
-	for link, eventTime := range events {
+	for videoID, eventTime := range events {
 		delay := time.Until(eventTime)
 		if delay < 0 {
 			// Skip events that are already in the past.
-			logrus.Warnf("Skipping event for %s because event time %s is in the past.", link, eventTime.Format(time.RFC3339))
+			logrus.Warnf("Skipping event for %s because event time %s is in the past.", videoID, eventTime.Format(time.RFC3339))
 
 			continue
 		}
 
 		// Log that focus mode is scheduled.
-		logrus.Infof("Scheduling focus mode for %s at %s (in %s)", link, eventTime.Format(time.RFC3339), delay)
+		logrus.Infof("Scheduling focus mode for %s at %s (in %s)", videoID, eventTime.Format(time.RFC3339), delay)
 
 		// Schedule startFocusMode to be called at the event time.
-		go func(link string, delay time.Duration) {
+		go func(videoID string, delay time.Duration) {
 			time.AfterFunc(delay, func() {
-				StartFocusMode(link)
+				StartFocusMode(videoID)
 			})
-		}(link, delay)
+		}(videoID, delay)
 	}
 }

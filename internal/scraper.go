@@ -1,112 +1,62 @@
 package internal
 
 import (
-	"context"
-	"fmt"
-	"strings"
 	"time"
 
-	"github.com/chromedp/chromedp"
 	"github.com/sirupsen/logrus"
 )
 
-type VideoInfo struct {
-	Topic          string
-	Channel        string
-	LiveStatus     string
-	UpcomingStatus string
-	Duration       string
-	YoutubeLink    string
-}
+func focusScrape(videoID string) error {
+	apiClient := NewAPIClient(xApiKey)
+	var apiVideos []APIVideoInfo
 
-type HolodexScraper struct {
-	videoInfos []VideoInfo
-}
-
-func (h *HolodexScraper) checkHolodex(holodexUrl string) error {
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-	)
-
-	allocatorCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	defer cancel()
-
-	ctx, cancelCtx := chromedp.NewContext(allocatorCtx)
-	defer cancelCtx()
-
-	err := chromedp.Run(ctx,
-		chromedp.Navigate(holodexUrl),
-		chromedp.WaitVisible(`a.video-card.no-decoration.d-flex.video-card-fluid.flex-column`, chromedp.ByQuery),
-		chromedp.Evaluate(`Array.from(document.querySelectorAll('a.video-card.no-decoration.d-flex.video-card-fluid.flex-column')).map(card => {
-			const topic = card.querySelector('div.video-topic.rounded-tl-sm')?.innerText.trim() || '';
-			const channel = card.querySelector('div.channel-name.video-card-subtitle')?.innerText.trim() || '';
-			const liveStatus = card.querySelector('div.video-card-subtitle span.text-live')?.innerText.trim() || '';
-			const upcomingStatus = card.querySelector('div.video-card-subtitle span.text-upcoming')?.innerText.trim() || '';
-			const duration = card.querySelector('div.video-duration.rounded-br-sm.video-duration-live')?.innerText.trim() || '';
-			const youtubeLink = card.getAttribute('href') || '';
-			return { topic, channel, liveStatus, upcomingStatus, duration, youtubeLink };
-		});`, &h.videoInfos),
-	)
-	if err != nil {
-		if strings.Contains(err.Error(), "no space left on device") {
-			if err := makeDiskFullMessage(botToken, chatID, phoneNumber, apiKey); err != nil {
-				return err
-			}
-			logrus.Info("Disk is full. Sleeping for 6 hours to allow cleanup.")
-			time.Sleep(6 * time.Hour)
-			return nil
-		}
-		return fmt.Errorf("failed to fetch data from Holodex: %w", err)
-	}
-
-	return nil
-}
-
-func focusScrape(link string) error {
-	// Initialize a new HolodexScraper instance.
-	hScraper := &HolodexScraper{}
-
-	// Attempt to scrape holodex.net with retries.
+	// Fetch from Holodex API with retry
 	err := retry(30, 10*time.Second, func() error {
-		return hScraper.checkHolodex("https://holodex.net/")
+		var err error
+		apiVideos, err = apiClient.FetchVideos("Hololive", "singing")
+		return err
 	})
 	if err != nil {
-		logrus.Error("checkHolodex failed after retries: ", err)
+		logrus.Error("FetchVideos failed after retries: ", err)
 		return err
 	}
 
-	// Filter the videos based on the provided link.
-	filteredVideos := []VideoInfo{}
-	for _, video := range hScraper.videoInfos {
-		logrus.Debugf("Checking video: %s", video.YoutubeLink)
-		if video.YoutubeLink == link {
-			filteredVideos = append(filteredVideos, video)
+	// Filter videos matching the given YouTube link
+	var filteredVideos []APIVideoInfo
+	for _, v := range apiVideos {
+		VideoID := "https://www.youtube.com/watch?v=" + v.ID
+		logrus.Debugf("Checking video: %s", VideoID)
+
+		if VideoID == videoID {
+			filteredVideos = append(filteredVideos, APIVideoInfo{
+				TopicID:          v.TopicID,
+				Channel:        v.Channel,
+				Status:     v.Status,				
+				ID:    VideoID,
+			})
 			break
 		}
 	}
-	hScraper.videoInfos = filteredVideos
 
-	// If no matching stream is found, log a message and exit.
+	// No match found
 	if len(filteredVideos) == 0 {
-		// Check if there is at least one video to retrieve channel info.
-		if len(hScraper.videoInfos) > 0 {
-			logrus.Infof("Focus mode: No 'Singing' stream scheduled for %s - %s. The stream might've been canceled", hScraper.videoInfos[0].Channel, link)
+		if len(apiVideos) > 0 {
+			logrus.Infof("Focus mode: No 'Singing' stream scheduled for %s - %s. The stream might've been canceled", apiVideos[0].Channel.Name, videoID)
 		} else {
-			logrus.Infof("Focus mode: No 'Singing' stream scheduled for link %s", link)
+			logrus.Infof("Focus mode: No 'Singing' stream scheduled for link %s", videoID)
 		}
 		return nil
 	}
 
-	// Notify with the filtered video info.
+	// Notify using the filtered list
 	err = retry(30, 10*time.Second, func() error {
-		return focusNotifyMe(hScraper.videoInfos)
+		return focusNotifyMe(filteredVideos)
 	})
 	if err != nil {
-		logrus.Error("notifyMe failed after retries: ", err)
+		logrus.Error("focusNotifyMe failed after retries: ", err)
 		return err
 	}
 
 	return nil
 }
+
